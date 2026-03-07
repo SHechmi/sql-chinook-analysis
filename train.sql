@@ -135,3 +135,46 @@ LEFT JOIN Album t2 ON t1.ArtistId=t2.ArtistId
 GROUP BY t1.ArtistId
 ORDER BY Album_count DESC;
 
+-- ===========================================
+-- SECTION 4: SUBQUERIES
+-- ===========================================
+
+-- 18. Customers from the same country as Frank (basic subquery)
+SELECT *
+FROM Customer
+WHERE Country = (SELECT Country FROM Customer WHERE FirstName = 'Frank');
+
+-- 19. Same query using both first and last name for safety
+SELECT *
+FROM Customer
+WHERE Country=(SELECT Country FROM Customer WHERE FirstName='Frank' AND LastName='Harris');
+
+-- 20. Tracks that cost more than the average track price (subquery with AVG)
+SELECT Name, UnitPrice
+FROM Track
+WHERE UnitPrice > (SELECT AVG(UnitPrice) FROM Track);
+
+-- 21. Customers and their invoices above $15, only for high-value customers (subquery with IN)
+SELECT t1.FirstName, t1.LastName, t2.total
+FROM Customer t1
+JOIN Invoice t2 ON t1.CustomerId=t2.CustomerId
+WHERE t1.CustomerId IN (SELECT t1.CustomerId FROM Customer t1 JOIN Invoice t2 ON t1.CustomerId=t2.CustomerId WHERE t2.Total>15) AND t2.Total>15
+ORDER BY t2.Total DESC;
+
+-- 22. Tracks belonging to the most purchased genre (nested subqueries + derived table)
+SELECT t1.Name
+FROM track t1,(
+    SELECT t1.GenreId, COUNT(*) as genre_count
+    FROM InvoiceLine t2
+    JOIN Track t1 ON t1.TrackId=t2.TrackId
+    GROUP BY t1.GenreId
+)
+WHERE genre_count = (
+    SELECT MAX(genre_count) 
+    FROM (
+        SELECT t1.GenreId, COUNT(*) as genre_count
+        FROM InvoiceLine t2
+        JOIN Track t1 ON t1.TrackId=t2.TrackId
+        GROUP BY t1.GenreId
+    )
+);
