@@ -1,180 +1,138 @@
 -- ===========================================
--- SQL PRACTICE - CHINOOK DATABASE
+-- SQL ANALYSIS - CHINOOK MUSIC STORE
 -- Author: Saifallah
 -- Started: February 2026
 -- ===========================================
 
--- ===========================================
--- SECTION 1: BASIC SELECT, WHERE, ORDER BY
--- ===========================================
-
--- 1. View all customers
-select * 
-FROM Customer;
-
--- 2. Get first 10 customers (names and country)
-SELECT firstname, lastname, country
-FROM Customer
-LIMIT 10;
-
--- 3. Find all USA customers
-SELECT firstname, lastname, country
-FROM Customer
-WHERE country='USA';
-
--- 4. Find tracks with 'Love' in the title
-SELECT name, composer, unitprice
-FROM Track
-WHERE name LIKE '%Love%'
-LIMIT 15;
-
--- 5. Invoices over $5, sorted by date
-SELECT invoiceid, invoicedate, total
-FROM Invoice
-WHERE total>5
-ORDER BY invoicedate;
-
--- 6. Check date range in Invoice table
-SELECT MIN(InvoiceDate), MAX(InvoiceDate) FROM Invoice;
-
--- 7. Top 5 most expensive tracks
-SELECT name, composer, unitprice
-FROM Track
-ORDER BY unitprice DESC
-LIMIT 5;
-
--- 8. Tracks with missing composer information
-SELECT name, composer
-FROM Track
-WHERE composer is NULL
-LIMIT 20;
-
--- 9. Invoices between $5 and $10, sorted by total
-SELECT invoiceid, customerid, total
-FROM Invoice
-where total BETWEEN 5 and 10
-ORDER by total;
-
--- 10. Most recent invoices from 2013 onward
-SELECT invoiceid, customerid, invoicedate, total
-FROM Invoice
-WHERE invoicedate >= '2013-01-01'
-ORDER BY invoicedate DESC
-LIMIT 10;
-
--- 11. Double-check date range
-SELECT MIN(InvoiceDate), MAX(InvoiceDate) FROM Invoice;
 
 -- ===========================================
--- SECTION 2: GROUP BY + COUNT + SUM
+-- SECTION 1: SALES & REVENUE ANALYSIS
 -- ===========================================
--- 12. Customers per country
-SELECT country, COUNT(*) as customer_count
-FROM Customer
-GROUP BY country
-ORDER BY customer_count DESC;
 
--- 13. Total sales per customer (top 10)
-SELECT CustomerId, SUM(Total) as total_spent
-FROM Invoice
-GROUP BY CustomerId
-ORDER BY total_spent DESC
-LIMIT 10;
-
--- 14. Customers who spent > $40
-SELECT CustomerId, SUM(Total) as total_spent
-FROM Invoice
-GROUP BY CustomerId
-HAVING SUM(Total) > 40
-ORDER BY total_spent DESC;
-
--- 14. Tracks per composer (starting with B)
-SELECT Composer, COUNT(*) as track_count
-FROM Track
-WHERE Composer LIKE 'B%' AND Composer IS NOT NULL
-GROUP BY Composer
-ORDER BY track_count DESC;
-
--- 10. Top 5 countries by sales
-SELECT BillingCountry, SUM(Total) as total_sales
-FROM invoice
+-- 1. Top 5 revenue-generating countries
+SELECT BillingCountry, SUM(total) as total_invoice
+FROM invoice 
 GROUP BY BillingCountry
-ORDER BY total_sales DESC
+ORDER BY total_invoice DESC
 LIMIT 5;
 
+-- 2. Average order value per country (sorted by highest average)
+SELECT BillingCountry, ROUND(AVG(total),2) as average
+FROM invoice 
+GROUP BY BillingCountry
+ORDER BY average DESC;
+
+-- 3. Total revenue per year
+SELECT strftime('%Y',InvoiceDate) as year, SUM(total) as revenue
+FROM Invoice
+GROUP BY year
+ORDER BY revenue DESC;
+
+-- 4. Best performing months across all years
+SELECT strftime('%m',InvoiceDate) as month, ROUND(SUM(Total),2) revenue_m
+FROM Invoice
+GROUP BY month
+ORDER BY revenue_m DESC;
+
+
 -- ===========================================
--- SECTION 3: JOINS
+-- SECTION 2: CUSTOMER ANALYSIS
 -- ===========================================
 
---14. Customer name + total spent (JOIN + GROUP BY)
-SELECT t1.FirstName, t1.LastName, SUM(t2.Total) AS total_spent
+-- 5. Top 10 customers by total spending
+SELECT t1.LastName, t1.FirstName, SUM(t2.total) as total_spending
 FROM Customer t1
-JOIN Invoice t2 ON t1.CustomerId = t2.CustomerId
+JOIN invoice t2 ON t1.CustomerId=t2.CustomerId
+GROUP BY t1.CustomerId
+ORDER BY total_spending DESC
+LIMIT 10;
+
+-- 6. Customer segmentation: VIP (>$40), Regular ($20-$40), Low (<$20)
+SELECT t1.FirstName, t1.LastName, SUM(t2.total) as total_spent,
+    CASE
+        WHEN SUM(t2.total) >40 THEN 'VIP'
+        WHEN SUM(t2.total) BETWEEN 20 AND 40 THEN 'REGULAR'
+        ELSE 'LOW'
+    END AS Rank
+FROM Customer t1
+JOIN Invoice t2 ON t1.CustomerId=t2.CustomerId
 GROUP BY t1.CustomerId
 ORDER BY total_spent DESC;
 
--- 15. Track name + album title + artist name (3-table JOIN)
-SELECT t1.Name as TRACK_NAME, t2.Title as ALBUM_Title, t3.Name as ARTIST_NAME
-FROM Track t1
-JOIN Album t2 ON t1.AlbumId=t2.AlbumId
-JOIN Artist t3 ON t2.ArtistId=t3.ArtistId;
+-- 7. Number of customers per country
+SELECT Country, count(*) as NumberOfCustomers
+FROM Customer
+GROUP BY Country
+ORDER BY NumberOfCustomers DESC;
 
--- 16. Artists with more than 10 tracks (JOIN + GROUP BY + HAVING)
-SELECT t1.Name as Artist_Name, count(t2.TrackId) as track_count
-FROM Artist t1
-JOIN Album t3 ON t1.ArtistId=t3.ArtistId
-JOIN Track t2 ON t2.AlbumId=t3.AlbumId
+-- 8. Customers who made no purchase since 2024 (inactive customers)
+SELECT t1.LastName, t1.FirstName, t2.InvoiceDate
+FROM Customer t1
+LEFT JOIN Invoice t2 ON t1.CustomerId=t2.CustomerId 
+    AND strftime('%Y',t2.InvoiceDate) >= '2024'
+WHERE t2.CustomerId IS NULL
+GROUP BY t1.CustomerId;
+
+
+-- ===========================================
+-- SECTION 3: MUSIC CATALOG ANALYSIS
+-- ===========================================
+
+-- 9. Revenue generated per genre (sorted by highest)
+SELECT t4.Name, ROUND(SUM(t2.Total),2) as total_revenue
+FROM Track t1
+JOIN Genre t4 ON t4.GenreId=t1.GenreId
+JOIN InvoiceLine t3 ON t1.TrackId=t3.TrackId
+JOIN Invoice t2 ON t2.InvoiceId=t3.InvoiceId
+GROUP BY t1.GenreId 
+ORDER BY total_revenue DESC;
+
+-- 10. Artists with the most tracks in the catalog
+SELECT t1.name, COUNT(*) as NbTrack
+FROM Track t2
+JOIN ALBUM t3 ON t2.AlbumId=t3.AlbumId
+JOIN Artist t1 ON t1.ArtistId=t3.ArtistId
 GROUP BY t1.ArtistId
-HAVING track_count > 10
+ORDER BY NbTrack DESC;
+
+-- 11. Albums with the most tracks
+SELECT t1.Title, Count(t2.TrackId) as track_count
+FROM track t2
+JOIN Album t1 ON t1.AlbumId=t2.AlbumId
+GROUP BY t1.AlbumId
 ORDER BY track_count DESC;
 
--- 17. All artists with their album count, including artists with zero albums (LEFT JOIN)
-SELECT t1.Name as Artist_Name, count(t2.AlbumId) as album_count
-FROM Artist t1
-LEFT JOIN Album t2 ON t1.ArtistId=t2.ArtistId
-GROUP BY t1.ArtistId
-ORDER BY Album_count DESC;
 
 -- ===========================================
--- SECTION 4: SUBQUERIES
+-- SECTION 4: TIME-BASED ANALYSIS
 -- ===========================================
 
--- 18. Customers from the same country as Frank (basic subquery)
-SELECT *
-FROM Customer
-WHERE Country = (SELECT Country FROM Customer WHERE FirstName = 'Frank');
+-- 12. Year-over-year revenue trend
+SELECT strftime('%Y',InvoiceDate) as Year, SUM(Total) as revenue
+FROM Invoice
+GROUP BY Year
+ORDER BY Year DESC;
 
--- 19. Same query using both first and last name for safety
-SELECT *
-FROM Customer
-WHERE Country=(SELECT Country FROM Customer WHERE FirstName='Frank' AND LastName='Harris');
+-- 13. Revenue by quarter (Q1/Q2/Q3/Q4)
+SELECT ROUND(SUM(Total),2) as total_revenue, 
+    CASE 
+        WHEN strftime('%m',InvoiceDate) IN ('01','02','03') THEN 'Q1'
+        WHEN strftime('%m',InvoiceDate) IN ('04','05','06') THEN 'Q2'
+        WHEN strftime('%m',InvoiceDate) IN ('07','08','09') THEN 'Q3'
+        WHEN strftime('%m',InvoiceDate) IN ('10','11','12') THEN 'Q4'
+    END AS quarter
+FROM Invoice
+GROUP BY quarter
+ORDER BY total_revenue DESC;
 
--- 20. Tracks that cost more than the average track price (subquery with AVG)
-SELECT Name, UnitPrice
-FROM Track
-WHERE UnitPrice > (SELECT AVG(UnitPrice) FROM Track);
-
--- 21. Customers and their invoices above $15, only for high-value customers (subquery with IN)
-SELECT t1.FirstName, t1.LastName, t2.total
-FROM Customer t1
-JOIN Invoice t2 ON t1.CustomerId=t2.CustomerId
-WHERE t1.CustomerId IN (SELECT t1.CustomerId FROM Customer t1 JOIN Invoice t2 ON t1.CustomerId=t2.CustomerId WHERE t2.Total>15) AND t2.Total>15
-ORDER BY t2.Total DESC;
-
--- 22. Tracks belonging to the most purchased genre (nested subqueries + derived table)
-SELECT t1.Name
-FROM track t1,(
-    SELECT t1.GenreId, COUNT(*) as genre_count
-    FROM InvoiceLine t2
-    JOIN Track t1 ON t1.TrackId=t2.TrackId
-    GROUP BY t1.GenreId
+-- 14. Best performing month per year (using subquery + derived table)
+SELECT Year, Month, MAX(total_revenue) as peak_revenue
+FROM (
+    SELECT strftime('%Y',InvoiceDate) as Year, 
+           strftime('%m',InvoiceDate) as Month, 
+           SUM(Total) as total_revenue
+    FROM Invoice
+    GROUP BY Month, year
 )
-WHERE genre_count = (
-    SELECT MAX(genre_count) 
-    FROM (
-        SELECT t1.GenreId, COUNT(*) as genre_count
-        FROM InvoiceLine t2
-        JOIN Track t1 ON t1.TrackId=t2.TrackId
-        GROUP BY t1.GenreId
-    )
-);
+GROUP BY Year
+ORDER BY Year;
